@@ -27,10 +27,11 @@ export const BillingModal: React.FC<BillingModalProps> = ({ onClose }) => {
 
     const interval = setInterval(async () => {
       const serverStatus = await KaspiPayService.checkPaymentStatus(paymentQr.paymentId);
-      if (serverStatus !== 'PENDING' && serverStatus !== 'UNKNOWN') {
-        setPaymentStatus(serverStatus);
-      } else if (serverStatus === 'PAID') {
+      if (serverStatus === 'PAID') {
         setPaymentStatus('PAID');
+        clearInterval(interval);
+      } else if (serverStatus === 'FAILED' || serverStatus === 'EXPIRED') {
+        setPaymentStatus(serverStatus);
         clearInterval(interval);
       }
     }, 2500);
