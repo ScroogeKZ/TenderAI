@@ -17,7 +17,8 @@ import {
   History,
   CheckCircle2,
   AlertTriangle,
-  Download
+  Download,
+  ShieldCheck
 } from 'lucide-react';
 
 interface TenderDetailModalProps {
@@ -35,11 +36,10 @@ export const TenderDetailModal: React.FC<TenderDetailModalProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'overview' | 'ai' | 'rag' | 'audit'>('overview');
   
-  // RAG Chat State
   const [ragMessages, setRagMessages] = useState<Array<{ sender: 'user' | 'ai'; text: string }>>([
     {
       sender: 'ai',
-      text: 'Здравствуйте! Я ИИ-ассистент TenderAI по данному лоту. Вы можете спросить у меня любые подробности: условия оплаты, требования к лицензиям, суммы обеспечения или дедлайны.'
+      text: 'Здравствуйте! Я ИИ-ассистент TenderAI по данному лоту. Отвечаю исключительно по фактам из приложенной технической спецификации и параметров Заказчика.'
     }
   ]);
   const [inputQuestion, setInputQuestion] = useState('');
@@ -54,11 +54,10 @@ export const TenderDetailModal: React.FC<TenderDetailModalProps> = ({
     setRagMessages(prev => [...prev, { sender: 'user', text: userText }]);
     setInputQuestion('');
 
-    // Generate RAG response via AIService
     setTimeout(() => {
       const aiReply = AIService.answerRAGQuestion(tender, userText);
       setRagMessages(prev => [...prev, { sender: 'ai', text: aiReply }]);
-    }, 400);
+    }, 300);
   };
 
   return (
@@ -153,7 +152,6 @@ export const TenderDetailModal: React.FC<TenderDetailModalProps> = ({
           {activeTab === 'overview' && (
             <div className="space-y-6">
               
-              {/* Summary Stats Grid */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800">
                   <p className="text-xs text-slate-400 mb-1">Сумма лота (KZT)</p>
@@ -177,7 +175,6 @@ export const TenderDetailModal: React.FC<TenderDetailModalProps> = ({
                 </div>
               </div>
 
-              {/* Customer & Location Details */}
               <div className="p-5 rounded-2xl bg-slate-950/40 border border-slate-800 space-y-3">
                 <h3 className="text-sm font-semibold text-slate-200 uppercase tracking-wider">
                   Информация о заказчике
@@ -202,7 +199,6 @@ export const TenderDetailModal: React.FC<TenderDetailModalProps> = ({
                 </div>
               </div>
 
-              {/* Description */}
               {tender.description && (
                 <div className="p-5 rounded-2xl bg-slate-950/40 border border-slate-800">
                   <h3 className="text-sm font-semibold text-slate-200 uppercase tracking-wider mb-2">
@@ -212,7 +208,6 @@ export const TenderDetailModal: React.FC<TenderDetailModalProps> = ({
                 </div>
               )}
 
-              {/* Documents List */}
               <div className="p-5 rounded-2xl bg-slate-950/40 border border-slate-800">
                 <h3 className="text-sm font-semibold text-slate-200 uppercase tracking-wider mb-3">
                   Вложенная конкурсная документация ({tender.documents.length})
@@ -248,7 +243,6 @@ export const TenderDetailModal: React.FC<TenderDetailModalProps> = ({
           {activeTab === 'ai' && (
             <div className="space-y-6">
               
-              {/* AI Summary Block */}
               <div className="p-5 rounded-2xl bg-blue-950/20 border border-blue-900/40 space-y-3">
                 <div className="flex items-center space-x-2 text-amber-400 font-semibold text-sm">
                   <Sparkles className="w-5 h-5" />
@@ -275,7 +269,6 @@ export const TenderDetailModal: React.FC<TenderDetailModalProps> = ({
                 )}
               </div>
 
-              {/* Risk Assessment */}
               <div className="p-5 rounded-2xl bg-slate-950/50 border border-slate-800 space-y-4">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider">
@@ -317,11 +310,15 @@ export const TenderDetailModal: React.FC<TenderDetailModalProps> = ({
             </div>
           )}
 
-          {/* TAB 3: RAG CHAT */}
+          {/* TAB 3: RAG CHAT (Strictly Document Grounded) */}
           {activeTab === 'rag' && (
             <div className="flex flex-col h-[400px] bg-slate-950/60 rounded-2xl border border-slate-800 overflow-hidden">
               
-              {/* Message History */}
+              <div className="px-4 py-2 bg-amber-950/40 border-b border-amber-900/40 text-[11px] text-amber-300 flex items-center space-x-2">
+                <ShieldCheck className="w-4 h-4 text-amber-400 shrink-0" />
+                <span>Ответы формируются исключительно по загруженной конкурсной документации без вымысла юридических деталей.</span>
+              </div>
+
               <div className="flex-1 p-4 overflow-y-auto space-y-3">
                 {ragMessages.map((msg, idx) => (
                   <div
@@ -339,21 +336,20 @@ export const TenderDetailModal: React.FC<TenderDetailModalProps> = ({
                     <div className={`p-3 rounded-2xl text-xs leading-relaxed max-w-[80%] ${
                       msg.sender === 'user'
                         ? 'bg-blue-600 text-white rounded-tr-none'
-                        : 'bg-slate-900 border border-slate-800 text-slate-200 rounded-tl-none'
+                        : 'bg-slate-900 border border-slate-800 text-slate-200 rounded-tl-none space-y-1.5'
                     }`}>
-                      {msg.text}
+                      <p>{msg.text}</p>
                     </div>
                   </div>
                 ))}
               </div>
 
-              {/* Input box */}
               <form onSubmit={handleSendQuestion} className="p-3 border-t border-slate-800 bg-slate-900 flex items-center space-x-2">
                 <input
                   type="text"
                   value={inputQuestion}
                   onChange={(e) => setInputQuestion(e.target.value)}
-                  placeholder="Задайте вопрос по ТЗ, обеспечению или срокам..."
+                  placeholder="Задайте вопрос по ТЗ, обеспечению или дедлайну..."
                   className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-blue-500"
                 />
                 <button
