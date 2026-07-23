@@ -3,14 +3,12 @@
 import React from 'react';
 import { KanbanItem, KanbanStage } from '../lib/types/tender';
 import { 
-  Building2, 
   Trash2, 
   CheckCircle, 
   Clock, 
   Send, 
   Trophy, 
   XCircle,
-  DollarSign,
   UserCheck
 } from 'lucide-react';
 
@@ -29,13 +27,20 @@ const STAGES: Array<{ id: KanbanStage; title: string; color: string; icon: any }
   { id: 'LOST', title: 'Проиграли / Отклонено', color: 'border-rose-700/60 bg-rose-950/20 text-rose-300', icon: XCircle },
 ];
 
+const TEAM_MEMBERS = [
+  'Не назначен',
+  'Серик А. (Главный тендерщик)',
+  'Гульнара К. (Юрист)',
+  'Дмитрий В. (Снабжение)',
+  'Айдар Т. (Аналитик)'
+];
+
 export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   items,
   onUpdateStage,
   onRemoveItem,
   onOpenTenderDetails
 }) => {
-  // Calculate total budget in pipeline
   const totalPipelineAmount = items.reduce((acc, item) => acc + item.tender.amount, 0);
   const wonAmount = items.filter(i => i.stage === 'WON').reduce((acc, item) => acc + item.tender.amount, 0);
 
@@ -126,23 +131,42 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                       {item.tender.amount.toLocaleString('ru-RU')} ₸
                     </div>
 
-                    {/* Stage Switcher Buttons */}
-                    <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-[10px]">
-                      <span className="text-slate-400 flex items-center space-x-1">
-                        <UserCheck className="w-3 h-3 text-blue-400" />
-                        <span>Ответственный</span>
-                      </span>
+                    {/* Interactive Team Member Assignee Selector */}
+                    <div className="pt-2 border-t border-slate-800/80 space-y-1.5">
+                      <div className="flex items-center justify-between text-[10px]">
+                        <span className="text-slate-400 flex items-center space-x-1">
+                          <UserCheck className="w-3 h-3 text-blue-400" />
+                          <span>Ответственный:</span>
+                        </span>
 
-                      <select
-                        value={item.stage}
-                        onChange={(e) => onUpdateStage(item.id, e.target.value as KanbanStage)}
-                        className="bg-slate-950 text-slate-300 border border-slate-800 rounded px-1.5 py-0.5 text-[10px] focus:outline-none"
-                      >
-                        {STAGES.map(s => (
-                          <option key={s.id} value={s.id}>{s.title}</option>
-                        ))}
-                      </select>
+                        <select
+                          value={item.assignee || 'Не назначен'}
+                          onChange={(e) => {
+                            item.assignee = e.target.value;
+                          }}
+                          className="bg-slate-950 text-slate-300 border border-slate-800 rounded px-1.5 py-0.5 text-[10px] focus:outline-none max-w-[120px] truncate"
+                        >
+                          {TEAM_MEMBERS.map(m => (
+                            <option key={m} value={m}>{m}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Stage Switcher */}
+                      <div className="flex items-center justify-between text-[10px] pt-1">
+                        <span className="text-slate-400">Этап:</span>
+                        <select
+                          value={item.stage}
+                          onChange={(e) => onUpdateStage(item.id, e.target.value as KanbanStage)}
+                          className="bg-slate-950 text-slate-300 border border-slate-800 rounded px-1.5 py-0.5 text-[10px] focus:outline-none"
+                        >
+                          {STAGES.map(s => (
+                            <option key={s.id} value={s.id}>{s.title}</option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
+
                   </div>
                 ))}
               </div>
