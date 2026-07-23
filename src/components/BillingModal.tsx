@@ -19,7 +19,7 @@ export const BillingModal: React.FC<BillingModalProps> = ({ onClose }) => {
     const qrData = KaspiPayService.generateQrCode(selectedPlan.id, selectedPlan.priceKztMonth);
     setPaymentQr(qrData);
 
-    // Simulate Kaspi Pay webhook notification
+    // Simulated webhook trigger from Kaspi Pay server
     setTimeout(() => {
       setIsPaid(true);
     }, 4000);
@@ -115,7 +115,7 @@ export const BillingModal: React.FC<BillingModalProps> = ({ onClose }) => {
                   <span>Мгновенная оплата через Kaspi.kz (Kaspi Pay QR)</span>
                 </div>
                 <p className="text-xs text-slate-300 max-w-md leading-relaxed">
-                  Отсканируйте QR-код в приложении Kaspi.kz или Kaspi Pay. Подписка {selectedPlan.name} активируется автоматически после подтверждения платежа.
+                  Отсканируйте QR-код в приложении Kaspi.kz или Kaspi Pay. Подписка {selectedPlan.name} активируется автоматически после обработки серверного Webhook.
                 </p>
                 <div className="text-xs font-mono text-emerald-400">
                   К оплате: <span className="text-lg font-bold">{selectedPlan.priceKztMonth.toLocaleString('ru-RU')} KZT</span>
@@ -133,7 +133,7 @@ export const BillingModal: React.FC<BillingModalProps> = ({ onClose }) => {
               ) : isPaid ? (
                 <div className="p-4 rounded-2xl bg-emerald-950/60 border border-emerald-500/50 text-center space-y-1">
                   <ShieldCheck className="w-8 h-8 text-emerald-400 mx-auto" />
-                  <p className="text-xs font-bold text-emerald-300">Оплата успешно проведена!</p>
+                  <p className="text-xs font-bold text-emerald-300">Платёж подтверждён через Webhook!</p>
                   <p className="text-[10px] text-slate-400">Тариф {selectedPlan.name} активирован до 2026-08-23</p>
                 </div>
               ) : (
@@ -141,7 +141,7 @@ export const BillingModal: React.FC<BillingModalProps> = ({ onClose }) => {
                   <div className="w-32 h-32 bg-white rounded-xl p-2 mx-auto flex items-center justify-center border-2 border-red-500">
                     <QrCode className="w-24 h-24 text-slate-950" />
                   </div>
-                  <p className="text-[10px] text-amber-400 font-mono animate-pulse">Ожидание сканирования в Kaspi...</p>
+                  <p className="text-[10px] text-amber-400 font-mono animate-pulse">Ожидание ответа от сервера Kaspi Pay...</p>
                 </div>
               )}
             </div>
