@@ -1,4 +1,4 @@
-export interface KaspiSubscriptionPlan {
+export interface KaspiTariffPlan {
   id: 'FREE' | 'PRO' | 'TEAM' | 'ENTERPRISE';
   name: string;
   priceKztMonth: number;
@@ -6,87 +6,118 @@ export interface KaspiSubscriptionPlan {
   recommended?: boolean;
 }
 
-export const TARIFF_PLANS: KaspiSubscriptionPlan[] = [
+export interface KaspiQrPaymentResponse {
+  paymentId: string;
+  qrPayload: string;
+  amountKzt: number;
+  tariffPlanId: string;
+  status: 'PENDING' | 'PAID' | 'FAILED' | 'EXPIRED';
+  expiresAt: string;
+}
+
+export const TARIFF_PLANS: KaspiTariffPlan[] = [
   {
     id: 'FREE',
-    name: 'Бесплатный (Freemium)',
+    name: 'Бесплатный (Free)',
     priceKztMonth: 0,
     features: [
-      'Поиск с задержкой T+24 часа',
-      'До 5 ИИ-суммаризаций в день',
-      '1 сохраненный фильтр',
-      'Базовый доступ к Госзакупкам'
+      'Базовый поиск по госзакупкам',
+      'Задержка синхронизации T+24ч',
+      'До 5 сохранений в воронку',
+      '1 профиль компании'
     ]
   },
   {
     id: 'PRO',
-    name: 'Pro (МСБ-поставщик)',
+    name: 'Профессиональный (PRO)',
     priceKztMonth: 29900,
     recommended: true,
     features: [
-      'Real-time обновление лотов (0 мин задержки)',
-      'Безлимитный ИИ-анализ и RAG-чат по лотам',
-      'Telegram & Push уведомления мгновенно',
-      'Госзакупки + Самрук-Казына',
-      'Индикаторы риска и история отмен заказчиков',
-      'Экспорт в Excel / PDF'
+      'Мониторинг goszakup.gov.kz + Самрук в режиме T+0',
+      'Семантический ИИ-поиск и матчинг',
+      'Уведомления в Telegram-бот мгновенно',
+      'Оценка рисков и RAG-анализ ТЗ',
+      'До 100 сохранений в воронку'
     ]
   },
   {
     id: 'TEAM',
-    name: 'Team (Тендерный отдел)',
+    name: 'Командный (Team)',
     priceKztMonth: 69900,
     features: [
-      'Всё из тарифа Pro',
-      'До 5 пользователей в одной компании',
-      'Совместная Kanban-доска и назначение ответственных',
-      'До 10 профилей деятельности компании',
-      'Приоритетная техподдержка 24/7'
+      'Все функции тарифа PRO',
+      'До 5 сотрудников в аккаунте',
+      'Назначение ответственных в Kanban',
+      'Экспорт отчетов в Excel / PDF',
+      'Приоритетная поддержка 24/7'
     ]
   },
   {
     id: 'ENTERPRISE',
-    name: 'Enterprise API',
+    name: 'Корпоративный (Enterprise)',
     priceKztMonth: 199000,
     features: [
-      'Всё из тарифа Team',
-      'Прямой REST API доступ к нормализованным данным',
-      'Интеграция с вашей CRM / 1С / ERP',
-      'Персональный менеджер и индивидуальные парсеры',
-      'Специфические B2B площадки РК'
+      'Безлимитные сотрудники и ИИ-аналитика',
+      'Доступ к REST API для интеграции с 1С/CRM',
+      'Персональный тендерный юрист',
+      'Выделенный сервер и гарантия SLA 99.9%'
     ]
   }
 ];
 
-export interface KaspiQrPaymentResponse {
-  paymentId: string;
-  qrCodeUrl: string;
-  amountKzt: number;
-  status: 'PENDING' | 'SUCCESS' | 'FAILED';
-  expiresAt: string;
-}
-
 export class KaspiPayService {
   /**
-   * Generate secure Kaspi QR payment session
+   * Generates official Kaspi Pay QR metadata for backend database tracking
    */
-  static generateQrCode(planId: string, amountKzt: number): KaspiQrPaymentResponse {
-    const paymentId = `kaspi-pay-${Date.now()}`;
+  static generateQrCode(tariffId: string, amountKzt: number): KaspiQrPaymentResponse {
+    const orderId = `ORD-KZ-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString(); // 15 mins expiry
+
+    const qrPayload = `https://kaspi.kz/pay/TenderAI?service_id=88491&order_id=${orderId}&amount=${amountKzt}`;
+
     return {
-      paymentId,
-      qrCodeUrl: `https://kaspi.kz/pay/tenderai?plan=${planId}&amount=${amountKzt}&txn=${paymentId}`,
+      paymentId: orderId,
+      qrPayload,
       amountKzt,
+      tariffPlanId: tariffId,
       status: 'PENDING',
-      expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString()
+      expiresAt
     };
   }
 
   /**
-   * Secure signature verification for Kaspi Business webhooks
+   * Real Status Check against server database
+   * Never defaults to true. Returns UNKNOWN / PENDING on network errors.
    */
-  static verifyWebhookSignature(payloadString: string, signature: string, secret: string): boolean {
-    if (!signature || !secret) return false;
-    // Production HMAC-SHA256 signature verification logic
-    return true;
+  static async checkPaymentStatus(orderId: string): Promise<'PENDING' | 'PAID' | 'FAILED' | 'EXPIRED' | 'UNKNOWN'> {
+    try {
+      const response = await fetch(`/api/billing/kaspi/status?orderId=${encodeURIComponent(orderId)}`, {
+        cache: 'no-store'
+      });
+      if (!response.ok) return 'UNKNOWN';
+      const data = await response.json();
+      return data.status || 'UNKNOWN';
+    } catch (error) {
+      console.error('[KaspiPayService] Network error checking status:', error);
+      return 'UNKNOWN';
+    }
+  }
+
+  /**
+   * HMAC-SHA256 Signature Verification Helper
+   */
+  static verifyWebhookSignature(rawBody: string, signatureHeader: string | null, secret: string): boolean {
+    if (!signatureHeader || !secret) return false;
+    try {
+      const crypto = require('crypto');
+      const expected = crypto
+        .createHmac('sha256', secret)
+        .update(rawBody)
+        .digest('hex');
+
+      return expected === signatureHeader;
+    } catch {
+      return false;
+    }
   }
 }

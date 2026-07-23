@@ -1,19 +1,46 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { PrismaClient } from '@prisma/client';
 
-export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-  const paymentId = searchParams.get('paymentId');
+const prisma = new PrismaClient();
 
-  if (!paymentId) {
-    return NextResponse.json({ success: false, message: 'paymentId обязателен' }, { status: 400 });
+export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url);
+  const orderId = searchParams.get('orderId') || searchParams.get('paymentId');
+
+  if (!orderId) {
+    return NextResponse.json(
+      { success: false, error: 'Missing required parameter orderId' },
+      { status: 400 }
+    );
   }
 
-  // In production, queries Payment record from Prisma DB by externalTxId
-  return NextResponse.json({
-    success: true,
-    paymentId,
-    status: 'PENDING',
-    amountKzt: 29900,
-    plan: 'PRO',
-  });
+  try {
+    const payment = await prisma.payment.findUnique({
+      where: { orderId }
+    });
+
+    if (!payment) {
+      return NextResponse.json({
+        success: true,
+        orderId,
+        status: 'PENDING',
+        message: 'Order created, awaiting Kaspi Pay webhook notification'
+      });
+    }
+
+    return NextResponse.json({
+      success: true,
+      orderId: payment.orderId,
+      status: payment.status,
+      amount: payment.amount,
+      confirmedAt: payment.confirmedAt
+    });
+
+  } catch (error: any) {
+    return NextResponse.json({
+      success: false,
+      status: 'UNKNOWN',
+      error: error.message || 'Database status lookup error'
+    }, { status: 500 });
+  }
 }

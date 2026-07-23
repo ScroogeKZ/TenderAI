@@ -1,244 +1,221 @@
-generator client {
-  provider = "prisma-client-js"
-}
-
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
+generator client {
+  provider = "prisma-client-js"
+}
+
 enum ProcurementMethod {
-  OPEN_TENDER        // Открытый конкурс
-  AUCTION            // Аукцион
-  PRICE_REQUEST      // Запрос ценовых предложений
-  SINGLE_SOURCE      // Из одного источника
-  TWO_STAGE_TENDER   // Двуэтапный конкурс
+  OPEN_TENDER
+  AUCTION
+  PRICE_PROPOSAL
+  SINGLE_SOURCE
 }
 
-enum SourceType {
-  GOSZAKUP           // goszakup.gov.kz
-  SAMRUK_KAZYNA      // portal.sk.kz
-  KAZATMROPROM       // e-procurement.kazatomprom.kz
-  B2B_PRIVATE        // Частные b2b площадки
+enum TenderStatus {
+  ACTIVE
+  CLOSED
+  CANCELLED
+  SUSPENDED
 }
 
-enum AdapterType {
-  API                // Официальный API
-  SCRAPER            // Парсинг страниц (fallback)
+enum DataSourceType {
+  API
+  SCRAPER
 }
 
-enum RiskSeverity {
-  LOW
-  MEDIUM
-  HIGH
-  CRITICAL
+enum HealthStatus {
+  HEALTHY
+  DEGRADED
+  DOWN
 }
 
 enum KanbanStage {
-  UNDER_REVIEW       // На рассмотрении
-  PREPARING_BID      // Готовим заявку
-  SUBMITTED          // Подано
-  WON                // Выиграли
-  LOST               // Проиграли
+  UNDER_REVIEW
+  PREPARING_BID
+  SUBMITTED
+  WON
+  LOST
 }
 
-enum TariffPlan {
-  FREE
-  PRO
-  TEAM
-  ENTERPRISE
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
 }
 
 enum PaymentStatus {
   PENDING
-  SUCCESS
+  PAID
   FAILED
-  REFUNDED
+  EXPIRED
 }
 
 model Tender {
-  id                        String             @id @default(uuid())
-  source                    SourceType
-  externalId                String
-  title                     String
-  description               String?
-  customerName              String
-  customerBin               String
-  category                  String
-  industryTags              String[]
-  procurementMethod         ProcurementMethod
-  amount                    Float              // В KZT
-  currency                  String             @default("KZT")
-  region                    String
-  publishDate               DateTime
-  deadlineDate              DateTime
-  applicationSecurityAmount Float?             // Обеспечение заявки KZT
-  applicationSecurityPercent Float?            // Обеспечение %
-  status                    String             @default("ACTIVE")
-  sourceUrl                 String
-  rawContent                String?            // Raw JSON or Text
-  normalizedAt              DateTime           @default(now())
+  id                         String              @id @default(cuid())
+  source                     String
+  externalId                 String
+  title                      String
+  description                String?
+  customerName               String
+  customerBin                String
+  category                   String
+  industryTags               String[]
+  procurementMethod          ProcurementMethod   @default(OPEN_TENDER)
+  amount                     Float
+  currency                   String              @default("KZT")
+  region                     String
+  publishDate                DateTime
+  deadlineDate               DateTime
+  applicationSecurityAmount Float?
+  applicationSecurityPercent Float?
+  status                     TenderStatus        @default(ACTIVE)
+  sourceUrl                  String
+  aiSummary                  String?
+  aiKeyRequirements          String[]
+  riskScore                  Int                 @default(0)
+  createdAt                  DateTime            @default(now())
+  updatedAt                  DateTime            @updatedAt
 
-  // AI & Risk enrichment
-  aiSummary                 String?
-  aiKeyRequirements         String[]
-  riskScore                 Int                @default(0) // 0 - 100
-  riskFlags                 RiskFlag[]
-  documents                 TenderDocument[]
-  history                   TenderAuditTrail[]
-  kanbanCards               KanbanCard[]
-
-  createdAt                 DateTime           @default(now())
-  updatedAt                 DateTime           @updatedAt
+  riskFlags                  RiskFlag[]
+  documents                  TenderDocument[]
+  history                    TenderAuditTrail[]
+  kanbanCards                KanbanCard[]
 
   @@unique([source, externalId])
-  @@index([region])
-  @@index([category])
-  @@index([amount])
-  @@index([deadlineDate])
 }
 
 model RiskFlag {
-  id          String       @id @default(uuid())
+  id          String   @id @default(cuid())
   tenderId    String
-  tender      Tender       @relation(fields: [tenderId], references: [id], onDelete: Cascade)
-  code        String       // e.g., SHORT_DEADLINE, CUSTOMER_CANCEL_HISTORY, UNUSUAL_REQS
-  severity    RiskSeverity
+  tender      Tender   @relation(fields: [tenderId], references: [id], onDelete: Cascade)
   title       String
   description String
+  severity    String   @default("MEDIUM")
+  createdAt   DateTime @default(now())
 }
 
 model TenderDocument {
-  id        String   @id @default(uuid())
+  id        String   @id @default(cuid())
   tenderId  String
   tender    Tender   @relation(fields: [tenderId], references: [id], onDelete: Cascade)
   fileName  String
   fileUrl   String
   fileSize  String?
-  fileType  String?
+  docType   String   @default("TECHNICAL_SPEC")
+  createdAt DateTime @default(now())
 }
 
 model TenderAuditTrail {
-  id         String   @id @default(uuid())
-  tenderId   String
-  tender     Tender   @relation(fields: [tenderId], references: [id], onDelete: Cascade)
-  changedBy  String   @default("SYSTEM_PARSER")
-  field      String
-  oldValue   String?
-  newValue   String?
-  timestamp  DateTime @default(now())
+  id        String   @id @default(cuid())
+  tenderId  String
+  tender    Tender   @relation(fields: [tenderId], references: [id], onDelete: Cascade)
+  field     String
+  oldValue  String?
+  newValue  String?
+  changedBy String   @default("System Parser")
+  timestamp DateTime @default(now())
 }
 
 model DataSource {
-  id                String       @id @default(uuid())
-  name              SourceType   @unique
+  id                String         @id @default(cuid())
+  name              String         @unique
   displayName       String
-  adapterType       AdapterType  @default(API)
-  isActive          Boolean      @default(true)
-  checkIntervalMins Int          @default(15)
+  adapterType       DataSourceType @default(API)
+  isActive          Boolean        @default(true)
+  checkIntervalMins Int            @default(15)
   lastSyncAt        DateTime?
-  healthStatus      String       @default("HEALTHY") // HEALTHY, DEGRADED, DOWN
-  successRate24h    Float        @default(99.8)
-  totalIngested     Int          @default(0)
-  logs              ConnectorLog[]
+  healthStatus      HealthStatus   @default(HEALTHY)
+  successRate24h    Float          @default(100.0)
+  totalIngested     Int            @default(0)
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  logs ConnectorLog[]
 }
 
 model ConnectorLog {
-  id           String     @id @default(uuid())
+  id           String     @id @default(cuid())
   sourceId     String
-  source       DataSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
-  status       String     // SUCCESS, WARN, ERROR
+  dataSource   DataSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  status       String
   message      String
   itemsFetched Int        @default(0)
-  durationMs   Int        @default(0)
+  executionMs  Int        @default(0)
   timestamp    DateTime   @default(now())
 }
 
 model AiTokenUsage {
-  id               String   @id @default(uuid())
-  userId           String?
-  operationType    String   // EMBEDDING, SUMMARIZATION, RAG_QA, MATCHING
-  promptTokens     Int
-  completionTokens Int
-  totalTokens      Int
-  costKzt          Float
-  modelName        String
-  timestamp        DateTime @default(now())
+  id         String   @id @default(cuid())
+  provider   String   @default("OpenAI")
+  model      String   @default("gpt-4o-mini")
+  tokensUsed Int
+  costUsd    Float    @default(0.0)
+  operation  String
+  timestamp  DateTime @default(now())
 }
 
 model CompanyProfile {
-  id           String   @id @default(uuid())
-  companyName  String
-  bin          String   @unique
-  activities   String   // Описание видов деятельности на естественном языке
-  keywords     String[]
-  regions      String[]
-  minAmount    Float    @default(0)
-  maxAmount    Float?
-  contactEmail String
+  id            String   @id @default(cuid())
+  companyName   String
+  bin           String   @unique
+  activities    String
+  keywords      String[]
+  regions       String[]
+  minAmount     Float    @default(0)
+  maxAmount     Float?
+  contactEmail  String
   telegramChatId String?
-  userId       String   @unique
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  subscriptionPlan String @default("FREE")
+  subscriptionExpiresAt DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }
 
 model User {
-  id           String          @id @default(uuid())
-  email        String          @unique
-  fullName     String
-  companyName  String?
-  role         String          @default("USER") // USER, ADMIN
-  tariffPlan   TariffPlan      @default(FREE)
-  company      CompanyProfile?
-  kanbanCards  KanbanCard[]
-  subscriptions NotificationSetting[]
-  payments     Payment[]
-  createdAt    DateTime        @default(now())
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  role      String   @default("USER")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  payments  Payment[]
 }
 
 model Payment {
-  id             String        @id @default(uuid())
-  userId         String
-  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  paymentProvider String       @default("KASPI_PAY")
-  externalTxId   String?       @unique
-  amountKzt      Float
-  plan           TariffPlan
-  status         PaymentStatus @default(PENDING)
-  qrCodeUrl      String?
-  paidAt         DateTime?
-  createdAt      DateTime      @default(now())
+  id                 String        @id @default(cuid())
+  orderId            String        @unique
+  kaspiTransactionId String?       @unique
+  status             PaymentStatus @default(PENDING)
+  amount             Float
+  tariffPlanId       String
+  userId             String?
+  user               User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  rawWebhookPayload  String?
+  createdAt          DateTime      @default(now())
+  confirmedAt        DateTime?
 }
 
 model KanbanCard {
-  id          String      @id @default(uuid())
-  userId      String
-  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tenderId    String
-  tender      Tender      @relation(fields: [tenderId], references: [id], onDelete: Cascade)
-  stage       KanbanStage @default(UNDER_REVIEW)
-  notes       String?
-  assignee    String?
-  priority    String      @default("MEDIUM") // LOW, MEDIUM, HIGH
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-
-  @@unique([userId, tenderId])
+  id        String      @id @default(cuid())
+  tenderId  String
+  tender    Tender      @relation(fields: [tenderId], references: [id], onDelete: Cascade)
+  stage     KanbanStage @default(UNDER_REVIEW)
+  priority  Priority    @default(MEDIUM)
+  assignee  String?
+  notes     String?
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
 }
 
 model NotificationSetting {
-  id              String   @id @default(uuid())
-  userId          String
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  filterQuery     String?  // Запрос поиска или ключевые слова
-  regions         String[]
-  categories      String[]
-  minAmount       Float?
-  maxAmount       Float?
-  channelTelegram Boolean  @default(true)
-  channelEmail    Boolean  @default(true)
-  channelPush     Boolean  @default(true)
-  frequency       String   @default("INSTANT") // INSTANT, DAILY_DIGEST
-  createdAt       DateTime @default(now())
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  telegramNotify Boolean  @default(true)
+  emailNotify    Boolean  @default(false)
+  minRiskNotify  Int      @default(50)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 }

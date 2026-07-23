@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { TARIFF_PLANS, KaspiPayService, KaspiQrPaymentResponse } from '../lib/services/kaspi.service';
-import { Check, CreditCard, QrCode, ShieldCheck, X } from 'lucide-react';
+import { Check, CreditCard, QrCode, ShieldCheck, X, AlertTriangle, RefreshCw } from 'lucide-react';
 
 interface BillingModalProps {
   onClose: () => void;
@@ -11,35 +11,32 @@ interface BillingModalProps {
 export const BillingModal: React.FC<BillingModalProps> = ({ onClose }) => {
   const [selectedPlanId, setSelectedPlanId] = useState<string>('PRO');
   const [paymentQr, setPaymentQr] = useState<KaspiQrPaymentResponse | null>(null);
-  const [isPaid, setIsPaid] = useState(false);
+  const [paymentStatus, setPaymentStatus] = useState<'PENDING' | 'PAID' | 'FAILED' | 'EXPIRED' | 'UNKNOWN'>('PENDING');
 
   const selectedPlan = TARIFF_PLANS.find(p => p.id === selectedPlanId) || TARIFF_PLANS[1];
 
   const handleGenerateKaspiQr = () => {
     const qrData = KaspiPayService.generateQrCode(selectedPlan.id, selectedPlan.priceKztMonth);
     setPaymentQr(qrData);
-    setIsPaid(false);
+    setPaymentStatus('PENDING');
   };
 
-  // Poll server API for Kaspi Pay transaction confirmation
+  // Poll backend status API exclusively (/api/billing/kaspi/status?orderId=...)
   useEffect(() => {
-    if (!paymentQr || isPaid) return;
+    if (!paymentQr || paymentStatus === 'PAID' || paymentStatus === 'FAILED') return;
 
     const interval = setInterval(async () => {
-      try {
-        const res = await fetch(`/api/billing/kaspi/status?paymentId=${paymentQr.paymentId}`);
-        const data = await res.json();
-        if (data.success && data.status === 'SUCCESS') {
-          setIsPaid(true);
-          clearInterval(interval);
-        }
-      } catch (e) {
-        // Network polling error
+      const serverStatus = await KaspiPayService.checkPaymentStatus(paymentQr.paymentId);
+      if (serverStatus !== 'PENDING' && serverStatus !== 'UNKNOWN') {
+        setPaymentStatus(serverStatus);
+      } else if (serverStatus === 'PAID') {
+        setPaymentStatus('PAID');
+        clearInterval(interval);
       }
-    }, 3000);
+    }, 2500);
 
     return () => clearInterval(interval);
-  }, [paymentQr, isPaid]);
+  }, [paymentQr, paymentStatus]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fadeIn">
@@ -53,7 +50,7 @@ export const BillingModal: React.FC<BillingModalProps> = ({ onClose }) => {
               <h2 className="text-xl font-bold text-slate-100">Тарифные планы TenderAI & Оплата Kaspi Pay</h2>
             </div>
             <p className="text-xs text-slate-400 mt-1">
-              Оплата подписки в тенге (KZT) с предоставлением закрывающих документов (ЭСФ / Акт выполненных работ).
+              Официальный эквайринг Kaspi Pay (KZT). Активация выполняется строго после валидации подписи вебхука сервером.
             </p>
           </div>
 
@@ -75,7 +72,7 @@ export const BillingModal: React.FC<BillingModalProps> = ({ onClose }) => {
                   onClick={() => {
                     setSelectedPlanId(plan.id);
                     setPaymentQr(null);
-                    setIsPaid(false);
+                    setPaymentStatus('PENDING');
                   }}
                   className={`p-5 rounded-2xl cursor-pointer transition-all flex flex-col justify-between relative ${
                     isSelected
@@ -122,19 +119,19 @@ export const BillingModal: React.FC<BillingModalProps> = ({ onClose }) => {
             })}
           </div>
 
-          {/* Payment Details / Kaspi QR Generator */}
+          {/* Payment Details & Server-Driven Status UI */}
           {selectedPlan.priceKztMonth > 0 && (
             <div className="p-6 rounded-2xl bg-gradient-to-r from-slate-950 to-slate-900 border border-slate-800 flex flex-col md:flex-row items-center justify-between gap-6">
               <div className="space-y-2">
                 <div className="flex items-center space-x-2 text-red-500 font-bold">
                   <QrCode className="w-5 h-5" />
-                  <span>Мгновенная оплата через Kaspi.kz (Kaspi Pay QR)</span>
+                  <span>Оплата через Kaspi.kz (Kaspi Pay QR)</span>
                 </div>
                 <p className="text-xs text-slate-300 max-w-md leading-relaxed">
-                  Отсканируйте QR-код в приложении Kaspi.kz или Kaspi Pay. Подписка {selectedPlan.name} активируется автоматически после обработки серверного Webhook.
+                  Отсканируйте QR-код в приложении Kaspi.kz. Подписка {selectedPlan.name} активируется исключительно после получения и валидации криптографической подписи вебхука сервером.
                 </p>
                 <div className="text-xs font-mono text-emerald-400">
-                  К оплате: <span className="text-lg font-bold">{selectedPlan.priceKztMonth.toLocaleString('ru-RU')} KZT</span>
+                  Сумма счета: <span className="text-lg font-bold">{selectedPlan.priceKztMonth.toLocaleString('ru-RU')} KZT</span>
                 </div>
               </div>
 
@@ -146,18 +143,37 @@ export const BillingModal: React.FC<BillingModalProps> = ({ onClose }) => {
                   <QrCode className="w-4 h-4" />
                   <span>Сгенерировать Kaspi QR</span>
                 </button>
-              ) : isPaid ? (
-                <div className="p-4 rounded-2xl bg-emerald-950/60 border border-emerald-500/50 text-center space-y-1">
+              ) : paymentStatus === 'PAID' ? (
+                /* STATE 1: PAID (Validated by Server Webhook) */
+                <div className="p-5 rounded-2xl bg-emerald-950/60 border border-emerald-500/50 text-center space-y-1 shrink-0 min-w-[220px]">
                   <ShieldCheck className="w-8 h-8 text-emerald-400 mx-auto" />
                   <p className="text-xs font-bold text-emerald-300">Платёж подтверждён через Webhook!</p>
-                  <p className="text-[10px] text-slate-400">Тариф {selectedPlan.name} активирован до 2026-08-23</p>
+                  <p className="text-[10px] text-slate-400 font-mono">Заказ: {paymentQr.paymentId}</p>
+                  <p className="text-[10px] text-emerald-400 font-semibold pt-1">Тариф {selectedPlan.name} активирован</p>
+                </div>
+              ) : paymentStatus === 'FAILED' || paymentStatus === 'EXPIRED' ? (
+                /* STATE 2: FAILED / EXPIRED */
+                <div className="p-5 rounded-2xl bg-rose-950/60 border border-rose-500/50 text-center space-y-2 shrink-0 min-w-[220px]">
+                  <AlertTriangle className="w-7 h-7 text-rose-400 mx-auto" />
+                  <p className="text-xs font-bold text-rose-300">Ошибка или истечение счета</p>
+                  <button
+                    onClick={handleGenerateKaspiQr}
+                    className="px-3 py-1.5 rounded-lg bg-rose-900 hover:bg-rose-800 text-white text-[11px] font-semibold flex items-center space-x-1 mx-auto"
+                  >
+                    <RefreshCw className="w-3 h-3" />
+                    <span>Повторить QR</span>
+                  </button>
                 </div>
               ) : (
-                <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 text-center space-y-2 shrink-0">
+                /* STATE 3: PENDING (Server Polling Active) */
+                <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 text-center space-y-2 shrink-0 min-w-[200px]">
                   <div className="w-32 h-32 bg-white rounded-xl p-2 mx-auto flex items-center justify-center border-2 border-red-500">
                     <QrCode className="w-24 h-24 text-slate-950" />
                   </div>
-                  <p className="text-[10px] text-amber-400 font-mono animate-pulse">Ожидание подтверждения от сервера Kaspi Pay...</p>
+                  <div className="space-y-0.5">
+                    <p className="text-[10px] text-amber-400 font-mono animate-pulse">Ожидание вебхука от сервера Kaspi...</p>
+                    <p className="text-[9px] text-slate-500 font-mono">Поллинг статуса /api/billing/kaspi/status</p>
+                  </div>
                 </div>
               )}
             </div>
