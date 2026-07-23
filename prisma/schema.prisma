@@ -49,6 +49,13 @@ enum TariffPlan {
   ENTERPRISE
 }
 
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  REFUNDED
+}
+
 model Tender {
   id                        String             @id @default(uuid())
   source                    SourceType
@@ -147,6 +154,18 @@ model ConnectorLog {
   timestamp    DateTime   @default(now())
 }
 
+model AiTokenUsage {
+  id               String   @id @default(uuid())
+  userId           String?
+  operationType    String   // EMBEDDING, SUMMARIZATION, RAG_QA, MATCHING
+  promptTokens     Int
+  completionTokens Int
+  totalTokens      Int
+  costKzt          Float
+  modelName        String
+  timestamp        DateTime @default(now())
+}
+
 model CompanyProfile {
   id           String   @id @default(uuid())
   companyName  String
@@ -174,7 +193,22 @@ model User {
   company      CompanyProfile?
   kanbanCards  KanbanCard[]
   subscriptions NotificationSetting[]
+  payments     Payment[]
   createdAt    DateTime        @default(now())
+}
+
+model Payment {
+  id             String        @id @default(uuid())
+  userId         String
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  paymentProvider String       @default("KASPI_PAY")
+  externalTxId   String?       @unique
+  amountKzt      Float
+  plan           TariffPlan
+  status         PaymentStatus @default(PENDING)
+  qrCodeUrl      String?
+  paidAt         DateTime?
+  createdAt      DateTime      @default(now())
 }
 
 model KanbanCard {
