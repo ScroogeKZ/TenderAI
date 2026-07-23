@@ -1,18 +1,10 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { DataSourceStatus } from '../lib/types/tender';
-import { GoszakupApiAdapter } from '../lib/ingestion/goszakup.adapter';
-import { SamrukApiAdapter } from '../lib/ingestion/samruk.adapter';
 import { 
   Activity, 
   RefreshCw, 
-  CheckCircle2, 
-  AlertTriangle, 
-  Server, 
-  Cpu, 
-  Radio, 
-  ShieldCheck,
   Clock
 } from 'lucide-react';
 
@@ -27,38 +19,72 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   onTriggerSync,
   onAddNewTenders
 }) => {
-  const [logs, setLogs] = useState<Array<{ id: string; time: string; source: string; status: string; msg: string }>>([
-    { id: 'l-1', time: '16:15:02', source: 'GOSZAKUP', status: 'SUCCESS', msg: 'Импортировано 14 новых объявлений по API' },
-    { id: 'l-2', time: '16:00:10', source: 'SAMRUK_KAZYNA', status: 'SUCCESS', msg: 'Успешная дедупликация 8 лотов' },
-    { id: 'l-3', time: '15:30:45', source: 'KAZATOMPROM', status: 'WARN', msg: 'Превышен rate-limit (429). Включен безопасный тайм-аут 60 сек.' }
-  ]);
-
+  const [logs, setLogs] = useState<Array<{ id: string; time: string; source: string; status: string; msg: string }>>([]);
   const [syncingId, setSyncingId] = useState<string | null>(null);
+  const [metrics, setMetrics] = useState<{ totalTendersCount: number; aiTokens24h: number; maxAiTokensQuota: number }>({
+    totalTendersCount: 24900,
+    aiTokens24h: 148250,
+    maxAiTokensQuota: 500000
+  });
+
+  useEffect(() => {
+    // Fetch metrics from backend API
+    fetch('/api/admin/metrics')
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.metrics) {
+          setMetrics({
+            totalTendersCount: data.metrics.totalTendersCount,
+            aiTokens24h: data.metrics.aiTokens24h,
+            maxAiTokensQuota: data.metrics.maxAiTokensQuota
+          });
+          if (data.metrics.logs) {
+            setLogs(data.metrics.logs);
+          }
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const handleManualSync = async (source: DataSourceStatus) => {
     setSyncingId(source.id);
     onTriggerSync(source.id);
 
     try {
-      if (source.name === 'GOSZAKUP') {
-        const adapter = new GoszakupApiAdapter();
-        const res = await adapter.run();
-        onAddNewTenders(res.tenders);
+      // API-First call to server route handler
+      const response = await fetch('/api/ingestion', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source: source.name }),
+      });
+      const data = await response.json();
+
+      if (data.success && data.result) {
+        onAddNewTenders(data.result.tenders || []);
         setLogs(prev => [
-          { id: `l-${Date.now()}`, time: new Date().toLocaleTimeString('ru-RU'), source: 'GOSZAKUP', status: 'SUCCESS', msg: `Ручная синхронизация: +${res.tenders.length} лот(ов)` },
-          ...prev
-        ]);
-      } else if (source.name === 'SAMRUK_KAZYNA') {
-        const adapter = new SamrukApiAdapter();
-        const res = await adapter.run();
-        onAddNewTenders(res.tenders);
-        setLogs(prev => [
-          { id: `l-${Date.now()}`, time: new Date().toLocaleTimeString('ru-RU'), source: 'SAMRUK_KAZYNA', status: 'SUCCESS', msg: `Ручная синхронизация: +${res.tenders.length} лот(ов)` },
+          { 
+            id: `l-${Date.now()}`, 
+            time: new Date().toLocaleTimeString('ru-RU'), 
+            source: source.name, 
+            status: data.result.status, 
+            msg: data.result.message 
+          },
           ...prev
         ]);
       }
+    } catch (err: any) {
+      setLogs(prev => [
+        { 
+          id: `l-${Date.now()}`, 
+          time: new Date().toLocaleTimeString('ru-RU'), 
+          source: source.name, 
+          status: 'ERROR', 
+          msg: `Сбой выполнения: ${err?.message || 'Сетевая ошибка'}` 
+        },
+        ...prev
+      ]);
     } finally {
-      setTimeout(() => setSyncingId(null), 800);
+      setSyncingId(null);
     }
   };
 
@@ -80,12 +106,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         <div className="flex items-center space-x-4">
           <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 text-right">
             <span className="text-[10px] text-slate-400 block uppercase tracking-wider font-semibold">ИИ-Токены за 24ч</span>
-            <span className="text-base font-bold text-amber-400 font-mono">148,250 / 500,000</span>
+            <span className="text-base font-bold text-amber-400 font-mono">
+              {metrics.aiTokens24h.toLocaleString('ru-RU')} / {metrics.maxAiTokensQuota.toLocaleString('ru-RU')}
+            </span>
           </div>
 
           <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 text-right">
             <span className="text-[10px] text-slate-400 block uppercase tracking-wider font-semibold">Всего лотов в БД</span>
-            <span className="text-base font-bold text-emerald-400 font-mono">24,900</span>
+            <span className="text-base font-bold text-emerald-400 font-mono">
+              {metrics.totalTendersCount.toLocaleString('ru-RU')}
+            </span>
           </div>
         </div>
       </div>
@@ -115,7 +145,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 className="px-3 py-1.5 rounded-xl bg-blue-600/20 hover:bg-blue-600/40 border border-blue-500/40 text-blue-300 text-xs font-semibold flex items-center space-x-1.5 transition-all disabled:opacity-50"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${syncingId === src.id ? 'animate-spin' : ''}`} />
-                <span>Синхронизировать</span>
+                <span>Запустить синк</span>
               </button>
             </div>
 

@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { TARIFF_PLANS, KaspiPayService, KaspiQrPaymentResponse } from '../lib/services/kaspi.service';
-import { Check, CreditCard, Sparkles, QrCode, ShieldCheck, X } from 'lucide-react';
+import { Check, CreditCard, QrCode, ShieldCheck, X } from 'lucide-react';
 
 interface BillingModalProps {
   onClose: () => void;
@@ -18,12 +18,28 @@ export const BillingModal: React.FC<BillingModalProps> = ({ onClose }) => {
   const handleGenerateKaspiQr = () => {
     const qrData = KaspiPayService.generateQrCode(selectedPlan.id, selectedPlan.priceKztMonth);
     setPaymentQr(qrData);
-
-    // Simulated webhook trigger from Kaspi Pay server
-    setTimeout(() => {
-      setIsPaid(true);
-    }, 4000);
+    setIsPaid(false);
   };
+
+  // Poll server API for Kaspi Pay transaction confirmation
+  useEffect(() => {
+    if (!paymentQr || isPaid) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/billing/kaspi/status?paymentId=${paymentQr.paymentId}`);
+        const data = await res.json();
+        if (data.success && data.status === 'SUCCESS') {
+          setIsPaid(true);
+          clearInterval(interval);
+        }
+      } catch (e) {
+        // Network polling error
+      }
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [paymentQr, isPaid]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fadeIn">
@@ -141,7 +157,7 @@ export const BillingModal: React.FC<BillingModalProps> = ({ onClose }) => {
                   <div className="w-32 h-32 bg-white rounded-xl p-2 mx-auto flex items-center justify-center border-2 border-red-500">
                     <QrCode className="w-24 h-24 text-slate-950" />
                   </div>
-                  <p className="text-[10px] text-amber-400 font-mono animate-pulse">Ожидание ответа от сервера Kaspi Pay...</p>
+                  <p className="text-[10px] text-amber-400 font-mono animate-pulse">Ожидание подтверждения от сервера Kaspi Pay...</p>
                 </div>
               )}
             </div>

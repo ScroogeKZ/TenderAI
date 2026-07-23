@@ -5,11 +5,13 @@ import { TelegrafBotService } from '../lib/telegram/bot.service';
 import { Send, Bot, CheckCircle2, ShieldCheck, X, ExternalLink, QrCode, Copy } from 'lucide-react';
 
 interface TelegramBotModalProps {
+  telegramChatId?: string;
   onClose: () => void;
 }
 
-export const TelegramBotModal: React.FC<TelegramBotModalProps> = ({ onClose }) => {
+export const TelegramBotModal: React.FC<TelegramBotModalProps> = ({ telegramChatId, onClose }) => {
   const [copied, setCopied] = useState(false);
+  const isConnected = Boolean(telegramChatId && telegramChatId.trim().length > 0);
   const deepLink = TelegrafBotService.generateDeepLink('usr_kazit_service_101');
 
   const [botChat, setBotChat] = useState<Array<{ sender: 'bot' | 'user'; text: string }>>([
@@ -54,9 +56,15 @@ export const TelegramBotModal: React.FC<TelegramBotModalProps> = ({ onClose }) =
             <div>
               <h2 className="text-base font-bold text-slate-100 flex items-center space-x-2">
                 <span>Интеграция Telegram-Бота (@TenderAI_KZ_bot)</span>
-                <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold">
-                  Подключено
-                </span>
+                {isConnected ? (
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold">
+                    Подключено ({telegramChatId})
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-bold">
+                    Не привязан
+                  </span>
+                )}
               </h2>
               <p className="text-xs text-slate-400">
                 Канал мгновенных алертов и RAG-консультант в мессенджере
@@ -94,7 +102,7 @@ export const TelegramBotModal: React.FC<TelegramBotModalProps> = ({ onClose }) =
                 rel="noreferrer"
                 className="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold flex items-center space-x-1.5 transition-colors"
               >
-                <span>Открыть Telegram</span>
+                <span>Перейти в Telegram</span>
                 <ExternalLink className="w-3.5 h-3.5" />
               </a>
             </div>

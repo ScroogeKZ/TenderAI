@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Tender, KanbanItem, CompanyProfileData, DataSourceStatus } from '../lib/types/tender';
-import { INITIAL_TENDERS, INITIAL_DATA_SOURCES, KZ_REGIONS, CATEGORIES } from '../lib/mockData';
+import { INITIAL_DATA_SOURCES, KZ_REGIONS, CATEGORIES } from '../lib/mockData';
 import { AIService } from '../lib/services/ai.service';
 import { TelegramBotService } from '../lib/services/telegram.service';
 import { Navigation } from '../components/Navigation';
@@ -17,28 +17,19 @@ import { TelegramBotModal } from '../components/TelegramBotModal';
 import { 
   Search, 
   Sparkles, 
-  Filter, 
-  SlidersHorizontal, 
   RefreshCw, 
-  Building2, 
-  MapPin, 
-  CheckCircle2,
-  TrendingUp,
-  Layers,
-  ArrowUpDown
+  CheckCircle2
 } from 'lucide-react';
 
 export default function HomePage() {
-  // Navigation active tab
   const [activeTab, setActiveTab] = useState<'catalog' | 'kanban' | 'matching' | 'admin' | 'billing' | 'telegram'>('catalog');
   const [language, setLanguage] = useState<'RU' | 'KK'>('RU');
 
   // Main State
-  const [tenders, setTenders] = useState<Tender[]>(INITIAL_TENDERS);
+  const [tenders, setTenders] = useState<Tender[]>([]);
+  const [loading, setLoading] = useState(true);
   const [dataSources, setDataSources] = useState<DataSourceStatus[]>(INITIAL_DATA_SOURCES);
   const [kanbanItems, setKanbanItems] = useState<KanbanItem[]>([]);
-  
-  // Selected tender for detail modal
   const [selectedTender, setSelectedTender] = useState<Tender | null>(null);
 
   // Filter States
@@ -50,7 +41,6 @@ export default function HomePage() {
   const [maxAmount, setMaxAmount] = useState<string>('');
   const [sortBy, setSortBy] = useState<'date' | 'amount_desc' | 'risk_asc' | 'match_desc'>('date');
 
-  // Toast message state
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const showToast = (msg: string) => {
@@ -71,6 +61,26 @@ export default function HomePage() {
     telegramChatId: '@kazit_tender_team'
   });
 
+  // Fetch tenders via REST API (/api/tenders)
+  useEffect(() => {
+    setLoading(true);
+    const params = new URLSearchParams();
+    if (searchQuery) params.set('q', searchQuery);
+    if (selectedRegion !== 'Все регионы') params.set('region', selectedRegion);
+    if (selectedCategory !== 'Все категории') params.set('category', selectedCategory);
+    if (selectedSource !== 'ALL') params.set('source', selectedSource);
+
+    fetch(`/api/tenders?${params.toString()}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.tenders) {
+          setTenders(data.tenders);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [searchQuery, selectedRegion, selectedCategory, selectedSource]);
+
   // Kanban Handlers
   const handleAddToKanban = (tender: Tender) => {
     if (kanbanItems.some(item => item.tenderId === tender.id)) return;
@@ -88,7 +98,7 @@ export default function HomePage() {
 
   const handleUpdateKanbanStage = (itemId: string, newStage: any) => {
     setKanbanItems(prev => prev.map(item => item.id === itemId ? { ...item, stage: newStage } : item));
-    showToast('Этап в воронке обновлен!');
+    showToast('Этап воронки обновлен');
   };
 
   const handleRemoveKanbanItem = (itemId: string) => {
@@ -96,42 +106,18 @@ export default function HomePage() {
     showToast('Лот удален из воронки');
   };
 
-  // Telegram alert trigger
   const handleSendToTelegram = (tender: Tender) => {
     TelegramBotService.sendNotification(tender, companyProfile.telegramChatId);
     showToast(`Уведомление по лоту №${tender.externalId} отправлено в Telegram!`);
   };
 
-  // Run AI Semantic Matcher
   const matchedTenders = useMemo(() => {
     return AIService.matchCompanyProfile(companyProfile, tenders);
   }, [companyProfile, tenders]);
 
-  // Filtered Tenders list for catalog
   const filteredTenders = useMemo(() => {
     let list = tenders;
 
-    // 1. Natural Language / Keyword Search
-    if (searchQuery.trim()) {
-      list = AIService.searchSemantic(searchQuery, list);
-    }
-
-    // 2. Region Filter
-    if (selectedRegion !== 'Все регионы') {
-      list = list.filter(t => t.region === selectedRegion);
-    }
-
-    // 3. Category Filter
-    if (selectedCategory !== 'Все категории') {
-      list = list.filter(t => t.category === selectedCategory);
-    }
-
-    // 4. Source Filter
-    if (selectedSource !== 'ALL') {
-      list = list.filter(t => t.source === selectedSource);
-    }
-
-    // 5. Amount Filter
     if (minAmount) {
       list = list.filter(t => t.amount >= parseFloat(minAmount));
     }
@@ -139,22 +125,18 @@ export default function HomePage() {
       list = list.filter(t => t.amount <= parseFloat(maxAmount));
     }
 
-    // 6. Sorting
     return [...list].sort((a, b) => {
       if (sortBy === 'amount_desc') return b.amount - a.amount;
       if (sortBy === 'risk_asc') return a.riskScore - b.riskScore;
       if (sortBy === 'match_desc') return (b.matchPercentage || 0) - (a.matchPercentage || 0);
       return new Date(b.publishDate).getTime() - new Date(a.publishDate).getTime();
     });
-  }, [tenders, searchQuery, selectedRegion, selectedCategory, selectedSource, minAmount, maxAmount, sortBy]);
+  }, [tenders, minAmount, maxAmount, sortBy]);
 
-  // Overall Statistics
   const totalVolumeKzt = useMemo(() => tenders.reduce((acc, t) => acc + t.amount, 0), [tenders]);
 
   return (
     <div className="min-h-screen flex flex-col bg-darkbg text-slate-100">
-      
-      {/* Top Header & Navigation */}
       <Navigation
         activeTab={activeTab}
         setActiveTab={setActiveTab}
@@ -163,7 +145,6 @@ export default function HomePage() {
         kanbanCount={kanbanItems.length}
       />
 
-      {/* Toast Notification */}
       {toastMessage && (
         <div className="fixed bottom-6 right-6 z-50 px-4 py-3 rounded-2xl bg-gradient-to-r from-blue-600 to-kzblue-500 text-white font-semibold text-xs shadow-2xl shadow-blue-500/40 flex items-center space-x-2 animate-bounce">
           <CheckCircle2 className="w-4 h-4 text-emerald-300" />
@@ -171,17 +152,10 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-        
-        {/* TAB 1: CATALOG */}
         {activeTab === 'catalog' && (
           <div className="space-y-8 animate-fadeIn">
-            
-            {/* Hero Stats & AI Search Bar Banner */}
             <div className="glass-panel rounded-3xl p-6 md:p-8 space-y-6 relative overflow-hidden">
-              <div className="absolute -right-16 -top-16 w-64 h-64 rounded-full bg-blue-600/10 blur-3xl pointer-events-none" />
-              
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
                   <h1 className="text-2xl md:text-3xl font-extrabold text-slate-100 tracking-tight">
@@ -216,17 +190,9 @@ export default function HomePage() {
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder={language === 'RU' ? "Спросите ИИ-бота на естественном языке (например: 'ищу поставку серверов в Астане до 50 млн тенге')..." : "ИИ-ассистенттен табиғи тілде сұраңыз..."}
-                  className="w-full pl-12 pr-28 py-4 bg-slate-950/90 border border-slate-700/80 rounded-2xl text-sm text-slate-100 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 shadow-inner transition-all"
+                  placeholder={language === 'RU' ? "Спросите ИИ-бота на естественном языке (например: 'поставка серверов в Астане')..." : "ИИ-ассистенттен табиғи тілде сұраңыз..."}
+                  className="w-full pl-12 pr-28 py-4 bg-slate-950/90 border border-slate-700/80 rounded-2xl text-sm text-slate-100 placeholder-slate-400 focus:outline-none focus:border-blue-500 shadow-inner"
                 />
-                {searchQuery && (
-                  <button
-                    onClick={() => setSearchQuery('')}
-                    className="absolute right-24 top-1/2 -translate-y-1/2 px-2 py-1 text-xs text-slate-400 hover:text-white"
-                  >
-                    Очистить
-                  </button>
-                )}
                 <div className="absolute right-3 top-1/2 -translate-y-1/2 px-3 py-1.5 rounded-xl bg-blue-600 text-white text-xs font-semibold flex items-center space-x-1">
                   <span>ИИ-Поиск</span>
                 </div>
@@ -234,8 +200,6 @@ export default function HomePage() {
 
               {/* Filter Controls Row */}
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3 pt-2">
-                
-                {/* Region Selector */}
                 <div>
                   <label className="text-[10px] text-slate-400 uppercase font-semibold tracking-wider block mb-1">Регион РК</label>
                   <select
@@ -249,7 +213,6 @@ export default function HomePage() {
                   </select>
                 </div>
 
-                {/* Category Selector */}
                 <div>
                   <label className="text-[10px] text-slate-400 uppercase font-semibold tracking-wider block mb-1">Категория</label>
                   <select
@@ -263,7 +226,6 @@ export default function HomePage() {
                   </select>
                 </div>
 
-                {/* Source Selector */}
                 <div>
                   <label className="text-[10px] text-slate-400 uppercase font-semibold tracking-wider block mb-1">Источник</label>
                   <select
@@ -277,7 +239,6 @@ export default function HomePage() {
                   </select>
                 </div>
 
-                {/* Sorting */}
                 <div>
                   <label className="text-[10px] text-slate-400 uppercase font-semibold tracking-wider block mb-1">Сортировка</label>
                   <select
@@ -291,7 +252,6 @@ export default function HomePage() {
                   </select>
                 </div>
 
-                {/* Reset Filters */}
                 <div className="flex items-end">
                   <button
                     onClick={() => {
@@ -309,9 +269,7 @@ export default function HomePage() {
                     <span>Сбросить</span>
                   </button>
                 </div>
-
               </div>
-
             </div>
 
             {/* Results Grid */}
@@ -321,17 +279,18 @@ export default function HomePage() {
                   Найдено тендеров: <span className="text-blue-400">{filteredTenders.length}</span>
                 </h2>
                 <span className="text-xs text-slate-400">
-                  Обновлено 5 минут назад &bull; Источник: ЕГСЗ / Самрук-Казына
+                  Обновлено по API &bull; ЕГСЗ / Самрук-Казына
                 </span>
               </div>
 
-              {filteredTenders.length === 0 ? (
+              {loading ? (
+                <div className="glass-panel rounded-3xl p-12 text-center text-xs font-mono text-blue-400 animate-pulse">
+                  Загрузка лотов из REST API...
+                </div>
+              ) : filteredTenders.length === 0 ? (
                 <div className="glass-panel rounded-3xl p-12 text-center space-y-3">
                   <Search className="w-10 h-10 text-slate-600 mx-auto" />
                   <h3 className="text-base font-semibold text-slate-300">Лотов по данному запросу не найдено</h3>
-                  <p className="text-xs text-slate-500 max-w-md mx-auto">
-                    Попробуйте изменить параметры региона, категории или снизить требования к поисковому запросу.
-                  </p>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -349,11 +308,9 @@ export default function HomePage() {
                 </div>
               )}
             </div>
-
           </div>
         )}
 
-        {/* TAB 2: AI MATCHING */}
         {activeTab === 'matching' && (
           <div className="space-y-8 animate-fadeIn">
             <CompanyProfileModal
@@ -385,7 +342,6 @@ export default function HomePage() {
           </div>
         )}
 
-        {/* TAB 3: KANBAN WORKSPACE */}
         {activeTab === 'kanban' && (
           <KanbanBoard
             items={kanbanItems}
@@ -395,21 +351,18 @@ export default function HomePage() {
           />
         )}
 
-        {/* TAB 4: ADMIN PANEL */}
         {activeTab === 'admin' && (
           <AdminPanel
             sources={dataSources}
-            onTriggerSync={(srcId) => showToast(`Запущена синхронизация источника...`)}
+            onTriggerSync={(srcId) => showToast(`Запущен синк источника...`)}
             onAddNewTenders={(newItems) => {
               setTenders(prev => [...newItems, ...prev]);
               showToast(`Импортировано +${newItems.length} новых лотов!`);
             }}
           />
         )}
-
       </main>
 
-      {/* MODALS */}
       {selectedTender && (
         <TenderDetailModal
           tender={selectedTender}
@@ -424,10 +377,12 @@ export default function HomePage() {
       )}
 
       {activeTab === 'telegram' && (
-        <TelegramBotModal onClose={() => setActiveTab('catalog')} />
+        <TelegramBotModal
+          telegramChatId={companyProfile.telegramChatId}
+          onClose={() => setActiveTab('catalog')}
+        />
       )}
 
-      {/* Footer */}
       <footer className="mt-auto border-t border-slate-800/80 bg-slate-950 py-6 text-center text-xs text-slate-500">
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div>
@@ -442,7 +397,6 @@ export default function HomePage() {
           </div>
         </div>
       </footer>
-
     </div>
   );
 }
